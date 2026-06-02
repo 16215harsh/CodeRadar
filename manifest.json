@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "LeetCode IntelliSense",
+  "name": "CodeRadar",
   "version": "1.0.0",
   "description": "Smart autocomplete for LeetCode's code editor — powered by a Trie-based suggestion engine.",
   "host_permissions": [

@@ -18,15 +18,15 @@ class AutocompletePopup {
    */
   _create() {
     // Guard against duplicate popups (SPA re-init)
-    const existing = document.getElementById('lc-intellisense-popup');
+    const existing = document.getElementById('coderadar-popup');
     if (existing) {
       this.el = existing;
       return;
     }
 
     this.el = document.createElement('div');
-    this.el.id = 'lc-intellisense-popup';
-    this.el.className = 'lc-intellisense-popup';
+    this.el.id = 'coderadar-popup';
+    this.el.className = 'coderadar-popup';
     this.el.setAttribute('role', 'listbox');
     this.el.setAttribute('aria-label', 'Autocomplete suggestions');
     document.body.appendChild(this.el);
@@ -55,7 +55,7 @@ class AutocompletePopup {
     header.className = 'lc-popup-header';
     header.innerHTML = `
       <span class="lc-popup-icon">⚡</span>
-      <span class="lc-popup-title">IntelliSense</span>
+      <span class="lc-popup-title">CodeRadar</span>
       <span class="lc-popup-hint">Tab ↹ to accept</span>
     `;
     this.el.appendChild(header);
@@ -272,5 +272,5 @@ class AutocompletePopup {
   }
 }
 
-window.__leetcodeIntellisense = window.__leetcodeIntellisense || {};
-window.__leetcodeIntellisense.AutocompletePopup = AutocompletePopup;
+window.__codeRadar = window.__codeRadar || {};
+window.__codeRadar.AutocompletePopup = AutocompletePopup;

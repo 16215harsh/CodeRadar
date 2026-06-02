@@ -155,5 +155,5 @@ const Tokenizer = {
   }
 };
 
-window.__leetcodeIntellisense = window.__leetcodeIntellisense || {};
-window.__leetcodeIntellisense.Tokenizer = Tokenizer;
+window.__codeRadar = window.__codeRadar || {};
+window.__codeRadar.Tokenizer = Tokenizer;

@@ -1,13 +1,13 @@
 /*
- * LeetCode IntelliSense — Popup Styles
+ * CodeRadar — Popup Styles
  *
- * Design: Dark glassmorphic panel inspired by VS Code's IntelliSense.
+ * Design: Dark glassmorphic panel inspired by VS Code's CodeRadar.
  * Matches LeetCode's dark UI seamlessly.
  */
 
 /* ── Popup Container ──────────────────────────────────────────────── */
 
-.lc-intellisense-popup {
+.coderadar-popup {
   position: fixed;
   z-index: 999999;
   min-width: 260px;
@@ -44,7 +44,7 @@
 }
 
 /* Subtle glow on top edge */
-.lc-intellisense-popup::before {
+.coderadar-popup::before {
   content: '';
   position: absolute;
   top: 0;
@@ -63,7 +63,7 @@
 
 /* ── Visible State ────────────────────────────────────────────────── */
 
-.lc-intellisense-popup.lc-popup--visible {
+.coderadar-popup.lc-popup--visible {
   opacity: 1;
   visibility: visible;
   transform: translateY(0) scale(1);
@@ -257,7 +257,7 @@
 /* ── Light Theme Support ──────────────────────────────────────────── */
 
 @media (prefers-color-scheme: light) {
-  .lc-intellisense-popup {
+  .coderadar-popup {
     background: rgba(252, 252, 252, 0.97);
     border-color: rgba(0, 0, 0, 0.1);
     box-shadow:

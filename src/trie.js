@@ -107,5 +107,5 @@ class Trie {
   }
 }
 
-window.__leetcodeIntellisense = window.__leetcodeIntellisense || {};
-window.__leetcodeIntellisense.Trie = Trie;
+window.__codeRadar = window.__codeRadar || {};
+window.__codeRadar.Trie = Trie;

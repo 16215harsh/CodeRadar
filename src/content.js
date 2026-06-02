@@ -1,5 +1,5 @@
 /**
- * LeetCode IntelliSense — Main Content Script (100% DOM-based)
+ * CodeRadar — Main Content Script (100% DOM-based)
  *
  * No page-context injection. No bridge. No CSP issues.
  *
@@ -13,9 +13,9 @@
 (function () {
   'use strict';
 
-  const { Trie } = window.__leetcodeIntellisense;
-  const { Tokenizer } = window.__leetcodeIntellisense;
-  const { AutocompletePopup } = window.__leetcodeIntellisense;
+  const { Trie } = window.__codeRadar;
+  const { Tokenizer } = window.__codeRadar;
+  const { AutocompletePopup } = window.__codeRadar;
 
   // ── State ──────────────────────────────────────────────────────────
   const trie = new Trie();
@@ -155,7 +155,7 @@
 
     const inputEl = getMonacoInput();
     if (!inputEl) {
-      console.warn('[LC-IntelliSense] Cannot find Monaco input element');
+      console.warn('[CodeRadar] Cannot find Monaco input element');
       return;
     }
 
@@ -413,7 +413,7 @@
     // Periodic trie rebuild (picks up new identifiers as user edits/scrolls)
     trieInterval = setInterval(rebuildTrie, 3000);
 
-    console.log('[LC-IntelliSense] ✨ Ready');
+    console.log('[CodeRadar] ✨ Ready');
   }
 
   // ── SPA Navigation ─────────────────────────────────────────────────

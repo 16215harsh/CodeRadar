@@ -1,8 +1,8 @@
-# ⚡ LeetCode IntelliSense
+# ⚡ CodeRadar
 
 A Chrome extension that adds **smart autocomplete** to LeetCode's Monaco code editor — powered by a Trie data structure.
 
-![LeetCode IntelliSense](icons/icon128.png)
+![CodeRadar](icons/icon128.png)
 
 ## ✨ Features
 
@@ -17,7 +17,7 @@ A Chrome extension that adds **smart autocomplete** to LeetCode's Monaco code ed
 ## 📁 Project Structure
 
 ```
-leetcode-intellisense/
+coderadar/
 ├── manifest.json          # Chrome Extension Manifest V3
 ├── src/
 │   ├── trie.js            # Trie data structure with frequency tracking
@@ -38,7 +38,7 @@ leetcode-intellisense/
 
 1. **Clone** this repo:
    ```bash
-   git clone https://github.com/YOUR_USERNAME/leetcode-intellisense.git
+   git clone https://github.com/YOUR_USERNAME/coderadar.git
    ```
 
 2. Open Chrome → navigate to `chrome://extensions/`
