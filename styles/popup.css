@@ -1,0 +1,304 @@
+/*
+ * LeetCode IntelliSense — Popup Styles
+ *
+ * Design: Dark glassmorphic panel inspired by VS Code's IntelliSense.
+ * Matches LeetCode's dark UI seamlessly.
+ */
+
+/* ── Popup Container ──────────────────────────────────────────────── */
+
+.lc-intellisense-popup {
+  position: fixed;
+  z-index: 999999;
+  min-width: 260px;
+  max-width: 400px;
+  max-height: 310px;
+  overflow: hidden;
+
+  /* Glassmorphism */
+  background: rgba(30, 30, 30, 0.96);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  box-shadow:
+    0 8px 32px rgba(0, 0, 0, 0.45),
+    0 2px 8px rgba(0, 0, 0, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+
+  /* Hidden by default */
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(4px) scale(0.98);
+  transition:
+    opacity 0.12s ease-out,
+    transform 0.12s ease-out,
+    visibility 0.12s ease-out;
+
+  font-family:
+    'SF Mono', 'Cascadia Code', 'Fira Code', 'JetBrains Mono',
+    'Consolas', 'Monaco', 'Menlo', monospace;
+  font-size: 12.5px;
+  line-height: 1;
+  color: #d4d4d4;
+}
+
+/* Subtle glow on top edge */
+.lc-intellisense-popup::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 10%;
+  right: 10%;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(100, 180, 255, 0.4),
+    transparent
+  );
+  border-radius: 1px;
+  z-index: 1;
+}
+
+/* ── Visible State ────────────────────────────────────────────────── */
+
+.lc-intellisense-popup.lc-popup--visible {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0) scale(1);
+}
+
+/* ── Header ───────────────────────────────────────────────────────── */
+
+.lc-popup-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.02);
+  user-select: none;
+}
+
+.lc-popup-icon {
+  font-size: 11px;
+  line-height: 1;
+}
+
+.lc-popup-title {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.4);
+  flex: 1;
+}
+
+.lc-popup-hint {
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.25);
+  padding: 2px 6px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+/* ── List ──────────────────────────────────────────────────────────── */
+
+.lc-popup-list {
+  list-style: none;
+  margin: 0;
+  padding: 4px 0;
+  max-height: 260px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scroll-behavior: smooth;
+}
+
+/* Scrollbar styling */
+.lc-popup-list::-webkit-scrollbar {
+  width: 4px;
+}
+
+.lc-popup-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.lc-popup-list::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 4px;
+}
+
+.lc-popup-list::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+/* ── List Items ───────────────────────────────────────────────────── */
+
+.lc-popup-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 10px;
+  cursor: pointer;
+  margin: 0 3px;
+  border-radius: 4px;
+  transition:
+    background-color 0.08s ease,
+    color 0.08s ease;
+}
+
+.lc-popup-item:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.lc-popup-item--selected {
+  background: rgba(4, 120, 212, 0.35) !important;
+  color: #ffffff;
+}
+
+.lc-popup-item--selected .lc-item-text {
+  color: #ffffff;
+}
+
+/* ── Item Icons ───────────────────────────────────────────────────── */
+
+.lc-item-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.lc-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  font-size: 10px;
+  font-weight: 700;
+  border-radius: 3px;
+  line-height: 1;
+}
+
+/* Class/Type icon — orange */
+.lc-icon--class {
+  background: rgba(230, 162, 60, 0.2);
+  color: #e6a23c;
+  border: 1px solid rgba(230, 162, 60, 0.3);
+}
+
+/* Constant icon — blue */
+.lc-icon--const {
+  background: rgba(75, 156, 211, 0.2);
+  color: #4b9cd3;
+  border: 1px solid rgba(75, 156, 211, 0.3);
+}
+
+/* Variable/function icon — purple */
+.lc-icon--var {
+  background: rgba(160, 120, 220, 0.2);
+  color: #a078dc;
+  border: 1px solid rgba(160, 120, 220, 0.3);
+}
+
+/* ── Item Text ────────────────────────────────────────────────────── */
+
+.lc-item-text {
+  flex: 1;
+  color: #d4d4d4;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 12.5px;
+}
+
+.lc-match {
+  color: #60b4ff;
+  font-weight: 700;
+}
+
+.lc-popup-item--selected .lc-match {
+  color: #90d0ff;
+}
+
+/* ── Frequency Badge ──────────────────────────────────────────────── */
+
+.lc-item-freq {
+  font-size: 9px;
+  color: rgba(255, 255, 255, 0.3);
+  padding: 1px 5px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  font-weight: 500;
+  flex-shrink: 0;
+}
+
+/* ── Animations ───────────────────────────────────────────────────── */
+
+@keyframes lc-popup-fadein {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.lc-popup--visible {
+  animation: lc-popup-fadein 0.15s ease-out;
+}
+
+/* ── Light Theme Support ──────────────────────────────────────────── */
+
+@media (prefers-color-scheme: light) {
+  .lc-intellisense-popup {
+    background: rgba(252, 252, 252, 0.97);
+    border-color: rgba(0, 0, 0, 0.1);
+    box-shadow:
+      0 8px 32px rgba(0, 0, 0, 0.12),
+      0 2px 8px rgba(0, 0, 0, 0.08);
+    color: #333;
+  }
+
+  .lc-popup-header {
+    border-bottom-color: rgba(0, 0, 0, 0.06);
+  }
+
+  .lc-popup-title {
+    color: rgba(0, 0, 0, 0.45);
+  }
+
+  .lc-popup-hint {
+    color: rgba(0, 0, 0, 0.35);
+    background: rgba(0, 0, 0, 0.04);
+    border-color: rgba(0, 0, 0, 0.08);
+  }
+
+  .lc-popup-item:hover {
+    background: rgba(0, 0, 0, 0.04);
+  }
+
+  .lc-popup-item--selected {
+    background: rgba(4, 120, 212, 0.12) !important;
+  }
+
+  .lc-item-text {
+    color: #333;
+  }
+
+  .lc-match {
+    color: #0070d4;
+  }
+
+  .lc-item-freq {
+    color: rgba(0, 0, 0, 0.3);
+    background: rgba(0, 0, 0, 0.04);
+    border-color: rgba(0, 0, 0, 0.08);
+  }
+}
