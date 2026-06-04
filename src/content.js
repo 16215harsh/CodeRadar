@@ -140,37 +140,15 @@
   // ── Text Insertion ─────────────────────────────────────────────────
 
   /**
-   * Insert the remaining suffix of a completion into Monaco's editor.
-   *
-   * Uses a synthetic ClipboardEvent('paste') with DataTransfer data.
-   * Monaco reads event.clipboardData.getData('text/plain') from paste
-   * events without checking isTrusted.
-   *
-   * The event MUST be dispatched on the correct input element
-   * (div.inputarea[contenteditable], NOT textarea.ime-text-area).
+   * Dispatch a synthetic paste event onto the Monaco input element.
+   * Monaco intercepts ClipboardEvent('paste') and inserts clipboardData
+   * text at the current cursor position, even from untrusted sources.
    */
-  function insertCompletion(prefix, word) {
-    const suffix = word.slice(prefix.length);
-    if (!suffix) return;
-
-    const inputEl = getMonacoInput();
-    if (!inputEl) {
-      console.warn('[CodeRadar] Cannot find Monaco input element');
-      return;
-    }
-
-    isInserting = true;
-
-    // Focus the correct element (skip readonly textarea)
-    if (!inputEl.hasAttribute('readonly')) {
-      inputEl.focus();
-    }
-
-    // Create paste event with our text
+  function _doPaste(inputEl, text) {
     try {
       const dt = new DataTransfer();
-      dt.setData('text/plain', suffix);
-      dt.setData('text/html', suffix);
+      dt.setData('text/plain', text);
+      dt.setData('text/html', text);
 
       const pasteEvent = new ClipboardEvent('paste', {
         clipboardData: dt,
@@ -180,20 +158,74 @@
 
       inputEl.dispatchEvent(pasteEvent);
 
-      // If paste wasn't handled, try execCommand as fallback
+      // Fallback if Monaco didn't intercept the paste
       if (!pasteEvent.defaultPrevented) {
-        document.execCommand('insertText', false, suffix);
+        document.execCommand('insertText', false, text);
       }
     } catch (err) {
-      // Last resort fallback
-      try { document.execCommand('insertText', false, suffix); } catch (_) {}
+      try { document.execCommand('insertText', false, text); } catch (_) {}
+    }
+  }
+
+  /**
+   * Insert a completion into Monaco's editor.
+   *
+   * Exact prefix match (e.g. typed "cou", accepting "count"):
+   *   → paste only the suffix "nt"  (Monaco already has "cou")
+   *
+   * Fuzzy match (e.g. typed "cnt", accepting "count"):
+   *   → dispatch Backspace events to erase the typed "cnt"
+   *   → then paste the full word "count"
+   *
+   * @param {string}  prefix  - what the user actually typed
+   * @param {string}  word    - the full completion word
+   * @param {boolean} isFuzzy - true when prefix is NOT a literal prefix of word
+   */
+  function insertCompletion(prefix, word, isFuzzy = false) {
+    const inputEl = getMonacoInput();
+    if (!inputEl) {
+      console.warn('[CodeRadar] Cannot find Monaco input element');
+      return;
     }
 
-    // Reset state after insertion settles
-    setTimeout(() => {
-      isInserting = false;
-      wordBuffer = '';
-    }, 120);
+    isInserting = true;
+
+    if (!inputEl.hasAttribute('readonly')) inputEl.focus();
+
+    if (isFuzzy && prefix.length > 0) {
+      // ── Fuzzy path: erase prefix, then insert full word ────────────
+      // Send one Backspace keydown per typed character so Monaco
+      // deletes them from its internal buffer.
+      for (let i = 0; i < prefix.length; i++) {
+        inputEl.dispatchEvent(new KeyboardEvent('keydown', {
+          key: 'Backspace', code: 'Backspace',
+          keyCode: 8, which: 8,
+          bubbles: true, cancelable: true
+        }));
+        inputEl.dispatchEvent(new KeyboardEvent('keyup', {
+          key: 'Backspace', code: 'Backspace',
+          keyCode: 8, which: 8,
+          bubbles: true, cancelable: true
+        }));
+      }
+
+      // Wait for Monaco to process all the Backspace events, then paste
+      const deleteDelay = Math.max(60, prefix.length * 20);
+      setTimeout(() => {
+        _doPaste(inputEl, word);
+        setTimeout(() => { isInserting = false; wordBuffer = ''; }, 120);
+      }, deleteDelay);
+
+    } else {
+      // ── Exact prefix path: paste only the remaining suffix ─────────
+      const suffix = word.slice(prefix.length);
+      if (!suffix) {
+        isInserting = false;
+        return;
+      }
+      _doPaste(inputEl, suffix);
+      setTimeout(() => { isInserting = false; wordBuffer = ''; }, 120);
+    }
   }
 
   // ── Autocomplete Logic ─────────────────────────────────────────────
@@ -211,8 +243,17 @@
     // Rebuild trie from current visible code
     rebuildTrie();
 
-    // Search for suggestions (case-sensitive prefix match)
-    let suggestions = trie.search(prefix, 8);
+    // ── 1. Exact prefix matches (always highest priority) ──────────
+    const exactResults = trie.search(prefix, 8);
+
+    // ── 2. Fuzzy matches (subsequence — fills gaps when prefix misses) ──
+    const fuzzyResults = trie.fuzzySearch(prefix, 8);
+
+    // ── 3. Merge: exact first, then fuzzy-only (not already in exact) ──
+    const seen = new Set(exactResults.map(r => r.word));
+    const fuzzyOnly = fuzzyResults.filter(r => !seen.has(r.word));
+
+    let suggestions = [...exactResults, ...fuzzyOnly].slice(0, 8);
 
     // Filter out exact match (user already typed the full word)
     suggestions = suggestions.filter(s => s.word !== prefix);
@@ -244,7 +285,8 @@
 
     const prefix = wordBuffer;
     popup.hide();
-    insertCompletion(prefix, selected.word);
+    // Pass isFuzzy so insertCompletion knows whether to erase prefix first
+    insertCompletion(prefix, selected.word, selected.isFuzzy === true);
     return true;
   }
 
@@ -387,8 +429,10 @@
     }
 
     // Popup mouse-click acceptance
-    popup.onAccept = (word) => {
-      insertCompletion(wordBuffer, word);
+    // onAccept receives the full suggestion item (not just the word)
+    // so we can forward isFuzzy to insertCompletion.
+    popup.onAccept = (item) => {
+      insertCompletion(wordBuffer, item.word, item.isFuzzy === true);
     };
   }
 

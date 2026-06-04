@@ -218,10 +218,21 @@
 .lc-match {
   color: #60b4ff;
   font-weight: 700;
+  font-style: normal;
+}
+
+/* Fuzzy matched chars — orange tint to distinguish from exact (blue) */
+.lc-match--fuzzy {
+  color: #f0a040;
+  font-weight: 700;
 }
 
 .lc-popup-item--selected .lc-match {
   color: #90d0ff;
+}
+
+.lc-popup-item--selected .lc-match--fuzzy {
+  color: #ffc870;
 }
 
 /* ── Frequency Badge ──────────────────────────────────────────────── */
@@ -235,6 +246,28 @@
   border: 1px solid rgba(255, 255, 255, 0.06);
   font-weight: 500;
   flex-shrink: 0;
+}
+
+/* ── Fuzzy Badge ───────────────────────────────────────────────────── */
+
+/* The ~ pill shown on fuzzy-only matches */
+.lc-fuzzy-badge {
+  font-size: 9px;
+  font-weight: 700;
+  color: #f0a040;
+  padding: 1px 5px;
+  border-radius: 10px;
+  background: rgba(240, 160, 64, 0.12);
+  border: 1px solid rgba(240, 160, 64, 0.25);
+  flex-shrink: 0;
+  opacity: 0.85;
+  letter-spacing: 0;
+}
+
+.lc-popup-item--selected .lc-fuzzy-badge {
+  color: #ffc870;
+  background: rgba(255, 200, 112, 0.15);
+  border-color: rgba(255, 200, 112, 0.3);
 }
 
 /* ── Animations ───────────────────────────────────────────────────── */
@@ -294,6 +327,16 @@
 
   .lc-match {
     color: #0070d4;
+  }
+
+  .lc-match--fuzzy {
+    color: #c07000;
+  }
+
+  .lc-fuzzy-badge {
+    color: #c07000;
+    background: rgba(192, 112, 0, 0.08);
+    border-color: rgba(192, 112, 0, 0.2);
   }
 
   .lc-item-freq {

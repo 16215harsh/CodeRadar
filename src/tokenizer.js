@@ -121,27 +121,104 @@ const Tokenizer = {
 
   /**
    * Detect the current language from LeetCode's UI.
-   * @returns {string}
+   *
+   * Uses 5 strategies in order of reliability:
+   *  1. Stable data-cy / aria attributes
+   *  2. Broad button/select text scan (catches dynamic class names)
+   *  3. URL path hints (some contest pages encode lang in URL)
+   *  4. Monaco model URI (monaco.editor model fileName)
+   *  5. Full body text scan (last resort)
+   *
+   * @returns {'python'|'javascript'|'java'|'cpp'}
    */
   detectLanguage() {
-    // LeetCode shows the language in a button/dropdown
-    const langButton = document.querySelector(
-      '[data-cy="lang-btn"],' +
-      'button[id*="lang"],' +
-      '.ant-select-selection-item,' +
-      'div[class*="lang-select"] button,' +
-      'button[class*="rounded"][class*="items-center"][class*="whitespace-nowrap"]'
-    );
-
-    if (langButton) {
-      const text = langButton.textContent.trim().toLowerCase();
-      if (text.includes('python')) return 'python';
-      if (text.includes('javascript') || text.includes('typescript')) return 'javascript';
-      if (text.includes('c++') || text.includes('cpp')) return 'cpp';
-      // Check java AFTER javascript/cpp to avoid substring false positives
-      if (text.includes('java')) return 'java';
+    // ── Helper: map any text blob to a language key ──────────────────
+    function textToLang(text) {
+      if (!text) return null;
+      const t = text.toLowerCase();
+      if (t.includes('python'))                          return 'python';
+      if (t.includes('typescript') || t.includes('ts')) return 'javascript';
+      if (t.includes('javascript') || t.includes('js')) return 'javascript';
+      if (t.includes('c++') || t.includes('cpp'))       return 'cpp';
+      if (t.includes('java'))                            return 'java';   // after javascript
+      if (t.includes('golang') || t.includes('go'))     return 'cpp';    // treat go as cpp-like
+      return null;
     }
 
+    // ── Strategy 1: stable data attributes & aria labels ─────────────
+    const stableSelectors = [
+      '[data-cy="lang-btn"]',
+      '[aria-label*="language" i]',
+      '[aria-label*="lang" i]',
+      'button[id*="lang"]',
+    ];
+    for (const sel of stableSelectors) {
+      const el = document.querySelector(sel);
+      const lang = el && textToLang(el.textContent);
+      if (lang) {
+        console.log(`[CodeRadar] Language (strategy 1 "${sel}"): ${lang}`);
+        return lang;
+      }
+    }
+
+    // ── Strategy 2: scan ALL buttons and select elements for lang text ─
+    // LeetCode sometimes puts lang in a <button> or <span> with dynamic classes.
+    // We look for small elements whose FULL text is just a language name.
+    const candidates = document.querySelectorAll(
+      'button, [role="option"], [role="menuitem"], .ant-select-selection-item, ' +
+      '[class*="select"] span, [class*="lang"] span, [class*="language"] span'
+    );
+    for (const el of candidates) {
+      const text = el.textContent.trim();
+      // Only consider short strings — a language name is ≤ 20 chars
+      if (text.length > 0 && text.length <= 20) {
+        const lang = textToLang(text);
+        if (lang) {
+          console.log(`[CodeRadar] Language (strategy 2, text="${text}"): ${lang}`);
+          return lang;
+        }
+      }
+    }
+
+    // ── Strategy 3: URL hint ──────────────────────────────────────────
+    const urlLang = textToLang(location.href);
+    if (urlLang) {
+      console.log(`[CodeRadar] Language (strategy 3, URL): ${urlLang}`);
+      return urlLang;
+    }
+
+    // ── Strategy 4: Monaco model URI (file extension) ────────────────
+    // Monaco stores the current buffer as a model with a URI like
+    // "inmemory://model/solution.py" — readable from the DOM via
+    // aria-label on the editor container.
+    const editorLabel = document.querySelector(
+      '.monaco-editor[data-uri], .monaco-editor [aria-label]'
+    );
+    if (editorLabel) {
+      const uri = editorLabel.getAttribute('data-uri') ||
+                  editorLabel.getAttribute('aria-label') || '';
+      if (uri.includes('.py'))   { console.log('[CodeRadar] Language (strategy 4, URI): python');     return 'python'; }
+      if (uri.includes('.js') || uri.includes('.ts'))
+                                 { console.log('[CodeRadar] Language (strategy 4, URI): javascript'); return 'javascript'; }
+      if (uri.includes('.java')) { console.log('[CodeRadar] Language (strategy 4, URI): java');       return 'java'; }
+      if (uri.includes('.cpp') || uri.includes('.cc'))
+                                 { console.log('[CodeRadar] Language (strategy 4, URI): cpp');        return 'cpp'; }
+    }
+
+    // ── Strategy 5: body text scan (last resort) ──────────────────────
+    // Search visible text near the editor area for language mentions.
+    const editorArea = document.querySelector('.monaco-editor')?.closest('section, div[class*="editor"], div[class*="code"]');
+    if (editorArea) {
+      const bodyText = editorArea.textContent;
+      const lang = textToLang(bodyText);
+      if (lang) {
+        console.log(`[CodeRadar] Language (strategy 5, body): ${lang}`);
+        return lang;
+      }
+    }
+
+    // ── Default ───────────────────────────────────────────────────────
+    console.log('[CodeRadar] Language: could not detect, defaulting to python');
     return 'python';
   },
 

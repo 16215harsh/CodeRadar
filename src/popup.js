@@ -1,6 +1,10 @@
 /**
  * Autocomplete Popup — renders the suggestion UI near the cursor.
  * Handles keyboard navigation, selection, and dismissal.
+ *
+ * Supports two highlight modes:
+ *  - Exact prefix: highlights the leading prefix block
+ *  - Fuzzy match:  highlights individual scattered matched characters
  */
 
 class AutocompletePopup {
@@ -9,15 +13,11 @@ class AutocompletePopup {
     this.items = [];
     this.selectedIndex = 0;
     this.visible = false;
-    this.onAccept = null; // callback when a suggestion is accepted
+    this.onAccept = null;
     this._create();
   }
 
-  /**
-   * Create the popup DOM element.
-   */
   _create() {
-    // Guard against duplicate popups (SPA re-init)
     const existing = document.getElementById('coderadar-popup');
     if (existing) {
       this.el = existing;
@@ -34,9 +34,9 @@ class AutocompletePopup {
 
   /**
    * Show the popup with suggestions at the given screen position.
-   * @param {Array<{word: string, frequency: number}>} suggestions
-   * @param {{x: number, y: number}} position - screen coordinates
-   * @param {string} prefix - the typed prefix (for highlighting)
+   * @param {Array<{word, frequency, indices, isFuzzy}>} suggestions
+   * @param {{x: number, y: number}} position
+   * @param {string} prefix
    */
   show(suggestions, position, prefix) {
     if (!suggestions || suggestions.length === 0) {
@@ -48,7 +48,6 @@ class AutocompletePopup {
     this.selectedIndex = 0;
     this.visible = true;
 
-    // Build the list HTML
     this.el.innerHTML = '';
 
     const header = document.createElement('div');
@@ -71,22 +70,27 @@ class AutocompletePopup {
       li.setAttribute('aria-selected', index === 0 ? 'true' : 'false');
       li.dataset.index = index;
 
-      // Determine icon based on word characteristics
       const icon = this._getIcon(item.word);
 
-      // Highlight the matching prefix
-      const highlighted = this._highlightMatch(item.word, prefix);
+      // Use scattered highlight for fuzzy, prefix highlight for exact
+      const highlighted = item.isFuzzy
+        ? this._highlightFuzzy(item.word, item.indices)
+        : this._highlightMatch(item.word, prefix);
+
+      // Show a ~ badge for fuzzy matches so users know it's not an exact prefix
+      const fuzzyBadge = item.isFuzzy
+        ? '<span class="lc-fuzzy-badge" title="Fuzzy match">~</span>'
+        : '';
 
       li.innerHTML = `
         <span class="lc-item-icon">${icon}</span>
         <span class="lc-item-text">${highlighted}</span>
+        ${fuzzyBadge}
         ${item.frequency > 1 ? `<span class="lc-item-freq">${item.frequency}×</span>` : ''}
       `;
 
       li.addEventListener('mouseenter', () => this._selectIndex(index));
       li.addEventListener('mousedown', (e) => {
-        // Use mousedown instead of click to fire before the document
-        // mousedown handler resets the word buffer
         e.preventDefault();
         e.stopPropagation();
         this.accept();
@@ -96,16 +100,10 @@ class AutocompletePopup {
     });
 
     this.el.appendChild(list);
-
-    // Position the popup
     this._position(position);
     this.el.classList.add('lc-popup--visible');
   }
 
-  /**
-   * Position the popup relative to the cursor, keeping it within viewport.
-   * @param {{x: number, y: number}} pos
-   */
   _position(pos) {
     const padding = 4;
     let top = pos.y + padding;
@@ -114,7 +112,6 @@ class AutocompletePopup {
     const viewportW = window.innerWidth;
     const viewportH = window.innerHeight;
 
-    // Use actual rendered dimensions when available, else estimate
     this.el.style.top = '0px';
     this.el.style.left = '0px';
     this.el.style.visibility = 'hidden';
@@ -126,42 +123,31 @@ class AutocompletePopup {
 
     this.el.style.visibility = '';
 
-    if (left + popupW > viewportW - 10) {
-      left = viewportW - popupW - 10;
-    }
+    if (left + popupW > viewportW - 10) left = viewportW - popupW - 10;
     if (left < 10) left = 10;
 
-    if (top + popupH > viewportH - 10) {
-      // Show above the cursor instead
-      top = pos.y - popupH - padding - 20;
-    }
+    if (top + popupH > viewportH - 10) top = pos.y - popupH - padding - 20;
     if (top < 10) top = 10;
 
     this.el.style.top = `${top}px`;
     this.el.style.left = `${left}px`;
   }
 
-  /**
-   * Get an icon for the suggestion based on naming conventions.
-   */
   _getIcon(word) {
     if (!word || word.length === 0) return '<span class="lc-icon lc-icon--var">V</span>';
-
     const firstChar = word[0];
     if (/[A-Z]/.test(firstChar) && firstChar !== '_') {
-      // PascalCase → likely a class/type
       return '<span class="lc-icon lc-icon--class">C</span>';
     }
     if (word.includes('_') || (word.length > 1 && word === word.toUpperCase())) {
-      // snake_case or SCREAMING_CASE → constant
       return '<span class="lc-icon lc-icon--const">K</span>';
     }
-    // Default → variable/function
     return '<span class="lc-icon lc-icon--var">V</span>';
   }
 
   /**
-   * Highlight the matching prefix in bold.
+   * Highlight exact prefix match — bolds the leading prefix block.
+   * e.g. prefix="cou", word="count" → <strong>cou</strong>nt
    */
   _highlightMatch(word, prefix) {
     if (!prefix) return this._escapeHtml(word);
@@ -178,65 +164,80 @@ class AutocompletePopup {
     );
   }
 
+  /**
+   * Highlight fuzzy match — wraps each matched character individually.
+   * e.g. word="count", indices=[0,3,4] → <strong>c</strong>ou<strong>nt</strong>
+   *
+   * Consecutive matched indices are grouped into a single <strong> for cleaner output.
+   */
+  _highlightFuzzy(word, indices) {
+    if (!indices || indices.length === 0) return this._escapeHtml(word);
+
+    const indexSet = new Set(indices);
+    let result = '';
+    let inMatch = false;
+
+    for (let i = 0; i < word.length; i++) {
+      const ch = this._escapeHtml(word[i]);
+      if (indexSet.has(i)) {
+        if (!inMatch) {
+          result += '<strong class="lc-match lc-match--fuzzy">';
+          inMatch = true;
+        }
+        result += ch;
+      } else {
+        if (inMatch) {
+          result += '</strong>';
+          inMatch = false;
+        }
+        result += ch;
+      }
+    }
+
+    if (inMatch) result += '</strong>';
+    return result;
+  }
+
   _escapeHtml(str) {
     return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   }
 
-  /**
-   * Hide the popup.
-   */
   hide() {
     this.visible = false;
-    if (this.el) {
-      this.el.classList.remove('lc-popup--visible');
-    }
+    if (this.el) this.el.classList.remove('lc-popup--visible');
     this.items = [];
     this.selectedIndex = 0;
   }
 
-  /**
-   * Navigate selection up.
-   */
   moveUp() {
     if (!this.visible || this.items.length === 0) return;
     this.selectedIndex = (this.selectedIndex - 1 + this.items.length) % this.items.length;
     this._updateSelection();
   }
 
-  /**
-   * Navigate selection down.
-   */
   moveDown() {
     if (!this.visible || this.items.length === 0) return;
     this.selectedIndex = (this.selectedIndex + 1) % this.items.length;
     this._updateSelection();
   }
 
-  /**
-   * Accept the currently selected suggestion.
-   */
   accept() {
     if (!this.visible || this.items.length === 0) return null;
     const selected = this.items[this.selectedIndex];
     this.hide();
     if (this.onAccept && selected) {
-      this.onAccept(selected.word);
+      // Pass the full item so the caller can read isFuzzy and other metadata
+      this.onAccept(selected);
     }
     return selected ? selected.word : null;
   }
 
-  /**
-   * Get the currently selected word (without accepting).
-   */
   getSelected() {
     if (!this.visible || this.items.length === 0) return null;
     if (this.selectedIndex >= this.items.length) this.selectedIndex = 0;
     return this.items[this.selectedIndex];
   }
 
-  /**
-   * Select a specific index.
-   */
   _selectIndex(index) {
     if (index >= 0 && index < this.items.length) {
       this.selectedIndex = index;
@@ -244,9 +245,6 @@ class AutocompletePopup {
     }
   }
 
-  /**
-   * Update visual selection state.
-   */
   _updateSelection() {
     const items = this.el.querySelectorAll('.lc-popup-item');
     items.forEach((item, i) => {
@@ -261,9 +259,6 @@ class AutocompletePopup {
     });
   }
 
-  /**
-   * Destroy the popup element.
-   */
   destroy() {
     if (this.el && this.el.parentNode) {
       this.el.parentNode.removeChild(this.el);
