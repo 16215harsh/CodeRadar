@@ -291,6 +291,13 @@ const Tokenizer = {
       return null;
     }
 
+    // Helper: save + return
+    function found(lang, strategy) {
+      try { localStorage.setItem('coderadar_lang', lang); } catch (_) {}
+      console.log(`[CodeRadar] Language (${strategy}): ${lang}`);
+      return lang;
+    }
+
     // ── Strategy 1: stable data attributes & aria labels ─────────────
     const stableSelectors = [
       '[data-cy="lang-btn"]',
@@ -301,10 +308,7 @@ const Tokenizer = {
     for (const sel of stableSelectors) {
       const el = document.querySelector(sel);
       const lang = el && textToLang(el.textContent);
-      if (lang) {
-        console.log(`[CodeRadar] Language (strategy 1 "${sel}"): ${lang}`);
-        return lang;
-      }
+      if (lang) return found(lang, `strategy 1 "${sel}"`);
     }
 
     // ── Strategy 2: scan ALL buttons and select elements for lang text ─
@@ -316,22 +320,15 @@ const Tokenizer = {
     );
     for (const el of candidates) {
       const text = el.textContent.trim();
-      // Only consider short strings — a language name is ≤ 20 chars
       if (text.length > 0 && text.length <= 20) {
         const lang = textToLang(text);
-        if (lang) {
-          console.log(`[CodeRadar] Language (strategy 2, text="${text}"): ${lang}`);
-          return lang;
-        }
+        if (lang) return found(lang, `strategy 2 "${text}"`);
       }
     }
 
     // ── Strategy 3: URL hint ──────────────────────────────────────────
     const urlLang = textToLang(location.href);
-    if (urlLang) {
-      console.log(`[CodeRadar] Language (strategy 3, URL): ${urlLang}`);
-      return urlLang;
-    }
+    if (urlLang) return found(urlLang, 'strategy 3 URL');
 
     // ── Strategy 4: Monaco model URI (file extension) ────────────────
     // Monaco stores the current buffer as a model with a URI like
@@ -343,29 +340,32 @@ const Tokenizer = {
     if (editorLabel) {
       const uri = editorLabel.getAttribute('data-uri') ||
                   editorLabel.getAttribute('aria-label') || '';
-      if (uri.includes('.py'))   { console.log('[CodeRadar] Language (strategy 4, URI): python');     return 'python'; }
-      if (uri.includes('.js') || uri.includes('.ts'))
-                                 { console.log('[CodeRadar] Language (strategy 4, URI): javascript'); return 'javascript'; }
-      if (uri.includes('.java')) { console.log('[CodeRadar] Language (strategy 4, URI): java');       return 'java'; }
-      if (uri.includes('.cpp') || uri.includes('.cc'))
-                                 { console.log('[CodeRadar] Language (strategy 4, URI): cpp');        return 'cpp'; }
+      if (uri.includes('.py'))                         return found('python',     'strategy 4 URI');
+      if (uri.includes('.js') || uri.includes('.ts'))  return found('javascript', 'strategy 4 URI');
+      if (uri.includes('.java'))                       return found('java',       'strategy 4 URI');
+      if (uri.includes('.cpp') || uri.includes('.cc')) return found('cpp',        'strategy 4 URI');
     }
 
     // ── Strategy 5: body text scan (last resort) ──────────────────────
     // Search visible text near the editor area for language mentions.
     const editorArea = document.querySelector('.monaco-editor')?.closest('section, div[class*="editor"], div[class*="code"]');
     if (editorArea) {
-      const bodyText = editorArea.textContent;
-      const lang = textToLang(bodyText);
-      if (lang) {
-        console.log(`[CodeRadar] Language (strategy 5, body): ${lang}`);
-        return lang;
-      }
+      const lang = textToLang(editorArea.textContent);
+      if (lang) return found(lang, 'strategy 5 body');
     }
 
-    // ── Default ───────────────────────────────────────────────────────
-    console.log('[CodeRadar] Language: could not detect, defaulting to python');
-    return 'python';
+    // ── Fallback: use last remembered language ────────────────────────
+    try {
+      const saved = localStorage.getItem('coderadar_lang');
+      if (saved) {
+        console.log(`[CodeRadar] Language (localStorage fallback): ${saved}`);
+        return saved;
+      }
+    } catch (_) {}
+
+    // ── Cold default: cpp (most common on LeetCode competitive) ───────
+    console.log('[CodeRadar] Language: detection failed, cold default → cpp');
+    return 'cpp';
   },
 
   /**
@@ -375,7 +375,243 @@ const Tokenizer = {
    */
   getKeywords(language) {
     return this.KEYWORDS[language] || this.KEYWORDS.python;
-  }
+  },
+
+  // ── Dot Completion ────────────────────────────────────────────────────
+
+  /**
+   * Methods grouped by container/type per language.
+   * Used for dot-completion (e.g. nums. → list methods).
+   */
+  METHOD_GROUPS: {
+    python: {
+      list:    ['append','extend','insert','remove','pop','index','count','sort',
+                'reverse','copy','clear'],
+      str:     ['split','join','strip','lstrip','rstrip','replace','find','rfind',
+                'startswith','endswith','upper','lower','title','capitalize',
+                'isdigit','isalpha','isalnum','isspace','isupper','islower',
+                'zfill','center','ljust','rjust','format','encode','count','index'],
+      dict:    ['get','keys','values','items','update','setdefault','pop',
+                'clear','copy','fromkeys'],
+      deque:   ['append','appendleft','pop','popleft','extend','extendleft',
+                'rotate','clear','copy','count','index','insert','remove'],
+      set:     ['add','remove','discard','pop','clear','copy',
+                'union','intersection','difference','symmetric_difference',
+                'issubset','issuperset','isdisjoint'],
+      Counter: ['most_common','elements','subtract','update','total'],
+      heap:    ['heappush','heappop','heapify','heapreplace','nlargest','nsmallest'],
+      math:    ['ceil','floor','sqrt','log','log2','log10','pow','exp','fabs',
+                'gcd','lcm','factorial','comb','perm','isnan','isinf','isfinite'],
+      itertools:['product','permutations','combinations','combinations_with_replacement',
+                 'chain','cycle','repeat','accumulate','groupby','islice'],
+    },
+    cpp: {
+      vector:         ['push_back','pop_back','emplace_back','front','back',
+                       'begin','end','rbegin','rend','size','empty','clear',
+                       'insert','erase','find','reserve','resize','at','swap','data'],
+      string:         ['length','size','substr','find','rfind','replace','append',
+                       'insert','erase','c_str','empty','clear','at','front','back',
+                       'begin','end','compare','push_back','pop_back'],
+      map:            ['insert','erase','find','count','contains','begin','end',
+                       'size','empty','clear','lower_bound','upper_bound','at'],
+      unordered_map:  ['insert','erase','find','count','contains','begin','end',
+                       'size','empty','clear','at','bucket_count'],
+      set:            ['insert','erase','find','count','contains','begin','end',
+                       'size','empty','clear','lower_bound','upper_bound'],
+      unordered_set:  ['insert','erase','find','count','contains','begin','end',
+                       'size','empty','clear'],
+      queue:          ['push','pop','front','back','empty','size'],
+      stack:          ['push','pop','top','empty','size'],
+      priority_queue: ['push','pop','top','empty','size'],
+      deque:          ['push_back','pop_back','push_front','pop_front',
+                       'front','back','begin','end','size','empty','at','clear'],
+      pair:           ['first','second','make_pair','swap'],
+    },
+    java: {
+      ArrayList:     ['add','remove','get','set','size','isEmpty','contains',
+                      'indexOf','lastIndexOf','clear','sort','toArray','iterator','subList'],
+      LinkedList:    ['add','remove','get','set','size','isEmpty','contains',
+                      'addFirst','addLast','removeFirst','removeLast',
+                      'getFirst','getLast','peek','poll','offer','push','pop'],
+      HashMap:       ['put','get','remove','containsKey','containsValue','size',
+                      'isEmpty','clear','keySet','values','entrySet',
+                      'getOrDefault','putIfAbsent','computeIfAbsent','merge','forEach'],
+      HashSet:       ['add','remove','contains','size','isEmpty','clear','iterator'],
+      TreeMap:       ['put','get','remove','containsKey','size','isEmpty','clear',
+                      'firstKey','lastKey','lowerKey','higherKey','floorKey','ceilingKey'],
+      TreeSet:       ['add','remove','contains','size','isEmpty','clear',
+                      'first','last','lower','higher','floor','ceiling'],
+      StringBuilder: ['append','insert','delete','deleteCharAt','replace',
+                      'reverse','toString','length','charAt','indexOf','substring','setCharAt'],
+      String:        ['length','charAt','substring','indexOf','lastIndexOf','split',
+                      'trim','replace','replaceAll','toUpperCase','toLowerCase',
+                      'startsWith','endsWith','contains','isEmpty','toCharArray',
+                      'compareTo','compareToIgnoreCase','matches','format'],
+      PriorityQueue: ['add','offer','poll','peek','remove','size','isEmpty','clear','contains'],
+      Arrays:        ['sort','fill','copyOf','copyOfRange','asList','toString',
+                      'equals','binarySearch'],
+      Collections:   ['sort','reverse','shuffle','min','max','frequency',
+                      'nCopies','unmodifiableList','singletonList'],
+    },
+    javascript: {
+      Array:  ['push','pop','shift','unshift','splice','slice','concat',
+               'join','reverse','sort','filter','map','reduce','reduceRight',
+               'forEach','find','findIndex','findLast','includes','indexOf',
+               'lastIndexOf','flat','flatMap','fill','every','some','at',
+               'entries','keys','values','copyWithin','length'],
+      String: ['split','slice','substring','indexOf','lastIndexOf','includes',
+               'startsWith','endsWith','replace','replaceAll','trim','trimStart',
+               'trimEnd','padStart','padEnd','repeat','toUpperCase','toLowerCase',
+               'charAt','charCodeAt','match','matchAll','search','at','length'],
+      Map:    ['set','get','has','delete','clear','size','keys','values','entries','forEach'],
+      Set:    ['add','has','delete','clear','size','keys','values','entries','forEach'],
+      Object: ['keys','values','entries','assign','create','freeze','seal',
+               'fromEntries','getPrototypeOf','defineProperty','hasOwnProperty'],
+      Math:   ['floor','ceil','round','abs','max','min','pow','sqrt','log',
+               'log2','log10','random','sign','trunc','hypot'],
+    },
+  },
+
+  /**
+   * Variable name → type heuristics (regex patterns).
+   * Checked when code-scan can't find a declaration.
+   */
+  VAR_TYPE_HINTS: {
+    python: {
+      list:    /^(nums|arr|result|res|ans|ret|output|items|elements|matrix|grid|board|row|col|path|temp|lst|vals|level|candidates|left|right)s?$/i,
+      str:     /^(s|t|word|text|pattern|target|source|line|sentence|prefix|suffix|key|name|code)$/i,
+      dict:    /^(d|mp|memo|cache|dp|count|freq|counter|idx|parent|rank|graph|adj|pos)$/i,
+      deque:   /^(q|dq|deq|queue|bfs|buf)$/i,
+      set:     /^(seen|visited|found|used|added|removed)$/i,
+      Counter: /^(cnt|counter|freq|count)$/i,
+    },
+    cpp: {
+      vector:         /^(nums|arr|result|res|ans|v|vec|path|temp|row|col|grid|board|matrix|adj|edges|indices|vals)$/i,
+      string:         /^(s|t|str|word|text|pattern|line|key|name)$/i,
+      map:            /^(mp|m|cnt|freq|idx|pos|parent|adj|graph)$/i,
+      unordered_map:  /^(mp|m|cnt|freq|idx|um|umap)$/i,
+      unordered_set:  /^(seen|visited|us|uset|found)$/i,
+      set:            /^(st|seen|found)$/i,
+      queue:          /^(q|queue|bfs)$/i,
+      stack:          /^(st|stk|stack|dfs)$/i,
+      priority_queue: /^(pq|heap|maxHeap|minHeap|h|pq)$/i,
+      deque:          /^(dq|deq|d)$/i,
+    },
+    java: {
+      ArrayList:     /^(list|nums|arr|result|res|ans|items|elements|path|temp)$/i,
+      HashMap:       /^(map|mp|memo|cache|dp|count|freq|idx|parent|graph|adj)$/i,
+      StringBuilder: /^(sb|builder|buf|buffer|result|res)$/i,
+      PriorityQueue: /^(pq|heap|queue|q)$/i,
+      HashSet:       /^(set|seen|visited|found)$/i,
+    },
+    javascript: {
+      Array:  /^(nums|arr|result|res|ans|items|list|elements|path)$/i,
+      Map:    /^(map|mp|memo|cache|dp|count|freq)$/i,
+      Set:    /^(set|seen|visited|found)$/i,
+      String: /^(s|t|str|word|text|pattern|line)$/i,
+    },
+  },
+
+  /**
+   * Infer the type of `varName` by:
+   *  1. Scanning `code` for a declaration (most accurate)
+   *  2. Falling back to name heuristics
+   *
+   * @param {string} varName
+   * @param {string} code
+   * @param {string} language
+   * @returns {string|null} type key (e.g. 'vector', 'list') or null
+   */
+  inferType(varName, code, language) {
+    if (!varName) return null;
+
+    // 1. Code-based inference
+    const fromCode = this._inferFromCode(varName, code, language);
+    if (fromCode) return fromCode;
+
+    // 2. Name heuristic
+    const hints = this.VAR_TYPE_HINTS[language] || {};
+    for (const [type, re] of Object.entries(hints)) {
+      if (re.test(varName)) return type;
+    }
+    return null;
+  },
+
+  _inferFromCode(varName, code, language) {
+    if (!code || !varName) return null;
+    const v = varName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); // escape regex special chars
+
+    const patterns = {
+      python: [
+        { re: new RegExp(`${v}\\s*=\\s*\\[`),        type: 'list'    },
+        { re: new RegExp(`${v}\\s*=\\s*\\{`),        type: 'dict'    },
+        { re: new RegExp(`${v}\\s*=\\s*['""]`),      type: 'str'     },
+        { re: new RegExp(`${v}\\s*=\\s*deque`),      type: 'deque'   },
+        { re: new RegExp(`${v}\\s*=\\s*set\\(`),     type: 'set'     },
+        { re: new RegExp(`${v}\\s*=\\s*Counter`),    type: 'Counter' },
+        { re: new RegExp(`${v}\\s*:\\s*str`),         type: 'str'     },
+        { re: new RegExp(`${v}\\s*:\\s*List`),        type: 'list'    },
+        { re: new RegExp(`${v}\\s*:\\s*Dict`),        type: 'dict'    },
+      ],
+      cpp: [
+        { re: new RegExp(`vector[^>]*>\\s*${v}`),           type: 'vector'        },
+        { re: new RegExp(`string\\s+${v}`),                  type: 'string'        },
+        { re: new RegExp(`unordered_map[^>]*>\\s*${v}`),    type: 'unordered_map' },
+        { re: new RegExp(`unordered_set[^>]*>\\s*${v}`),    type: 'unordered_set' },
+        { re: new RegExp(`\\bmap[^>]*>\\s*${v}`),           type: 'map'           },
+        { re: new RegExp(`\\bset[^>]*>?\\s*${v}`),          type: 'set'           },
+        { re: new RegExp(`priority_queue[^>]*>\\s*${v}`),   type: 'priority_queue'},
+        { re: new RegExp(`\\bqueue[^>]*>?\\s*${v}`),        type: 'queue'         },
+        { re: new RegExp(`\\bstack[^>]*>?\\s*${v}`),        type: 'stack'         },
+        { re: new RegExp(`\\bdeque[^>]*>\\s*${v}`),         type: 'deque'         },
+      ],
+      java: [
+        { re: new RegExp(`ArrayList[^>]*>\\s*${v}`),     type: 'ArrayList'     },
+        { re: new RegExp(`LinkedList[^>]*>\\s*${v}`),    type: 'LinkedList'    },
+        { re: new RegExp(`HashMap[^>]*>\\s*${v}`),       type: 'HashMap'       },
+        { re: new RegExp(`HashSet[^>]*>\\s*${v}`),       type: 'HashSet'       },
+        { re: new RegExp(`TreeMap[^>]*>\\s*${v}`),       type: 'TreeMap'       },
+        { re: new RegExp(`TreeSet[^>]*>\\s*${v}`),       type: 'TreeSet'       },
+        { re: new RegExp(`StringBuilder\\s+${v}`),        type: 'StringBuilder' },
+        { re: new RegExp(`String\\s+${v}`),               type: 'String'        },
+        { re: new RegExp(`PriorityQueue[^>]*>\\s*${v}`), type: 'PriorityQueue' },
+      ],
+      javascript: [
+        { re: new RegExp(`${v}\\s*=\\s*\\[`),          type: 'Array'  },
+        { re: new RegExp(`${v}\\s*=\\s*new\\s+Map`),   type: 'Map'    },
+        { re: new RegExp(`${v}\\s*=\\s*new\\s+Set`),   type: 'Set'    },
+        { re: new RegExp(`${v}\\s*=\\s*['""]`),        type: 'String' },
+        { re: new RegExp(`${v}\\s*=\\s*new\\s+Array`), type: 'Array'  },
+      ],
+    };
+
+    for (const { re, type } of (patterns[language] || [])) {
+      if (re.test(code)) return type;
+    }
+    return null;
+  },
+
+  /**
+   * Get method list for a given type+language combination.
+   * @returns {string[]|null}
+   */
+  getMethodsForType(type, language) {
+    return (this.METHOD_GROUPS[language] || {})[type] || null;
+  },
+
+  /**
+   * Get ALL methods across every type for a language (fallback for dot completion
+   * when type cannot be inferred).
+   * @returns {string[]}
+   */
+  getAllMethods(language) {
+    const groups = this.METHOD_GROUPS[language] || {};
+    const all = new Set();
+    for (const methods of Object.values(groups)) {
+      for (const m of methods) all.add(m);
+    }
+    return [...all].sort();
+  },
 };
 
 window.__codeRadar = window.__codeRadar || {};

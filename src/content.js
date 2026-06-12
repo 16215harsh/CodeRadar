@@ -1,114 +1,63 @@
-/**
- * CodeRadar — Main Content Script (100% DOM-based)
- *
- * No page-context injection. No bridge. No CSP issues.
- *
- * Strategy:
- * 1. Read code from .view-line DOM elements (visible lines)
- * 2. Track keystrokes to know the current word being typed
- * 3. Get cursor screen position from the .cursor DOM element
- * 4. Insert completions via synthetic paste events on Monaco's input element
- */
+
 
 (function () {
   'use strict';
 
-  const { Trie } = window.__codeRadar;
-  const { Tokenizer } = window.__codeRadar;
+  const { Trie }              = window.__codeRadar;
+  const { Tokenizer }         = window.__codeRadar;
   const { AutocompletePopup } = window.__codeRadar;
 
-  // ── State ──────────────────────────────────────────────────────────
-  const trie = new Trie();
+  const trie  = new Trie();
   const popup = new AutocompletePopup();
-  let wordBuffer = '';        // tracks the word the user is currently typing
+
+  let wordBuffer   = '';     
+  let dotMode      = false;  
+  let dotContext   = '';     
   let debounceTimer = null;
-  let lastCodeHash = '';      // avoid rebuilding trie if code hasn't changed
-  let isInserting = false;    // prevents re-triggering during completion insertion
-  let trieInterval = null;    // reference for cleanup
-  let initialized = false;    // prevent double-init
+  let lastCodeHash  = '';
+  let isInserting   = false;
+  let trieInterval  = null;
+  let initialized   = false;
+  let cachedLang    = null;  
 
-  // ── DOM Helpers ────────────────────────────────────────────────────
+  let _onKeyDown   = null;
+  let _onMouseDown = null;
 
-  /**
-   * Read code from all visible .view-line elements.
-   * Monaco virtualizes rendering, so only visible lines are in DOM.
-   * For typical LeetCode solutions this captures most/all code.
-   */
   function getCodeFromDOM() {
-    const viewLines = document.querySelectorAll('.monaco-editor .view-lines .view-line');
-    if (!viewLines || viewLines.length === 0) return '';
-
-    const lines = [];
-    viewLines.forEach(line => {
-      lines.push(line.textContent || '');
-    });
-    return lines.join('\n');
+    const lines = document.querySelectorAll('.monaco-editor .view-lines .view-line');
+    if (!lines.length) return '';
+    return Array.from(lines).map(l => l.textContent || '').join('\n');
   }
 
-  /**
-   * Get the cursor element's screen position for popup placement.
-   * Tries multiple selectors for different Monaco versions.
-   */
   function getCursorScreenPosition() {
     const cursor =
       document.querySelector('.monaco-editor .cursor.monaco-mouse-cursor-text') ||
       document.querySelector('.monaco-editor .cursors-layer .cursor') ||
       document.querySelector('.monaco-editor .cursor');
-
     if (!cursor) return null;
-
     const rect = cursor.getBoundingClientRect();
-    if (rect.height === 0 || rect.width === 0) return null;
-
+    if (rect.height === 0 && rect.width === 0) return null;
     return { x: rect.left, y: rect.top + rect.height };
   }
 
-  /**
-   * Find Monaco's ACTUAL input element.
-   *
-   * Modern Monaco DOM structure:
-   *   .monaco-editor
-   *     .overflow-guard
-   *       div.inputarea[contenteditable="true"]   ← real input
-   *         textarea.ime-text-area[readonly]       ← IME only, skip this
-   *
-   * Older Monaco:
-   *   .monaco-editor
-   *     textarea.inputarea                         ← direct textarea
-   */
   function getMonacoInput() {
-    // Priority 1: contenteditable div.inputarea (modern Monaco)
-    const ceDiv = document.querySelector('.monaco-editor .inputarea[contenteditable="true"]') ||
-                  document.querySelector('.monaco-editor [contenteditable="true"].inputarea');
-    if (ceDiv) return ceDiv;
-
-    // Priority 2: any contenteditable inside the editor
-    const anyCE = document.querySelector('.monaco-editor [contenteditable="true"]');
-    if (anyCE) return anyCE;
-
-    // Priority 3: non-readonly textarea
-    const editableTA = document.querySelector('.monaco-editor textarea:not([readonly])');
-    if (editableTA) return editableTA;
-
-    // Priority 4: active element if inside editor
-    const active = document.activeElement;
-    if (active && active.closest && active.closest('.monaco-editor')) {
-      return active;
-    }
-
-    // Priority 5: any textarea (last resort)
-    return document.querySelector('.monaco-editor textarea');
+    return (
+      document.querySelector('.monaco-editor .inputarea[contenteditable="true"]') ||
+      document.querySelector('.monaco-editor [contenteditable="true"].inputarea') ||
+      document.querySelector('.monaco-editor [contenteditable="true"]') ||
+      document.querySelector('.monaco-editor textarea:not([readonly])') ||
+      (() => {
+        const a = document.activeElement;
+        return (a && a.closest && a.closest('.monaco-editor')) ? a : null;
+      })() ||
+      document.querySelector('.monaco-editor textarea')
+    );
   }
 
-  /**
-   * Check if focus is currently inside a Monaco editor.
-   */
   function isFocusInEditor() {
     const active = document.activeElement;
     if (!active) return false;
-    // Walk up shadow DOM if needed
     if (active.closest) return !!active.closest('.monaco-editor');
-    // Fallback for elements without .closest
     let el = active;
     while (el) {
       if (el.classList && el.classList.contains('monaco-editor')) return true;
@@ -117,165 +66,202 @@
     return false;
   }
 
-  // ── Trie Management ────────────────────────────────────────────────
+  function getLanguage() {
+    if (!cachedLang) cachedLang = Tokenizer.detectLanguage();
+    return cachedLang;
+  }
 
   function rebuildTrie() {
+    if (document.hidden) return;   
+
     const code = getCodeFromDOM();
     if (!code) return;
 
-    const hash = code.length + ':' + code.slice(0, 200) + code.slice(-200);
+    const hash = code.length + ':' + code.slice(0, 150) + code.slice(-150);
     if (hash === lastCodeHash) return;
     lastCodeHash = hash;
 
     trie.clear();
+    cachedLang = null;  
 
-    const identifiers = Tokenizer.extractIdentifiers(code);
-    trie.bulkInsert(identifiers);
-
-    const lang = Tokenizer.detectLanguage();
-    const keywords = Tokenizer.getKeywords(lang);
-    trie.bulkInsert(keywords);
+    trie.bulkInsert(Tokenizer.extractIdentifiers(code));
+    trie.bulkInsert(Tokenizer.getKeywords(getLanguage()));
   }
 
-  // ── Text Insertion ─────────────────────────────────────────────────
-
-  /**
-   * Dispatch a synthetic paste event onto the Monaco input element.
-   * Monaco intercepts ClipboardEvent('paste') and inserts clipboardData
-   * text at the current cursor position, even from untrusted sources.
-   */
   function _doPaste(inputEl, text) {
     try {
       const dt = new DataTransfer();
       dt.setData('text/plain', text);
       dt.setData('text/html', text);
-
-      const pasteEvent = new ClipboardEvent('paste', {
-        clipboardData: dt,
-        bubbles: true,
-        cancelable: true
-      });
-
-      inputEl.dispatchEvent(pasteEvent);
-
-      // Fallback if Monaco didn't intercept the paste
-      if (!pasteEvent.defaultPrevented) {
-        document.execCommand('insertText', false, text);
-      }
-    } catch (err) {
-      try { document.execCommand('insertText', false, text); } catch (_) {}
+      const ev = new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true });
+      inputEl.dispatchEvent(ev);
+      if (!ev.defaultPrevented) document.execCommand('insertText', false, text);
+    } catch (_) {
+      try { document.execCommand('insertText', false, text); } catch (__) {}
     }
   }
 
-  /**
-   * Insert a completion into Monaco's editor.
-   *
-   * Exact prefix match (e.g. typed "cou", accepting "count"):
-   *   → paste only the suffix "nt"  (Monaco already has "cou")
-   *
-   * Fuzzy match (e.g. typed "cnt", accepting "count"):
-   *   → dispatch Backspace events to erase the typed "cnt"
-   *   → then paste the full word "count"
-   *
-   * @param {string}  prefix  - what the user actually typed
-   * @param {string}  word    - the full completion word
-   * @param {boolean} isFuzzy - true when prefix is NOT a literal prefix of word
-   */
   function insertCompletion(prefix, word, isFuzzy = false) {
     const inputEl = getMonacoInput();
-    if (!inputEl) {
-      console.warn('[CodeRadar] Cannot find Monaco input element');
-      return;
-    }
+    if (!inputEl) { console.warn('[CodeRadar] Monaco input not found'); return; }
 
     isInserting = true;
-
     if (!inputEl.hasAttribute('readonly')) inputEl.focus();
 
-    if (isFuzzy && prefix.length > 0) {
-      // ── Fuzzy path: erase prefix, then insert full word ────────────
-      // Send one Backspace keydown per typed character so Monaco
-      // deletes them from its internal buffer.
-      for (let i = 0; i < prefix.length; i++) {
-        inputEl.dispatchEvent(new KeyboardEvent('keydown', {
-          key: 'Backspace', code: 'Backspace',
-          keyCode: 8, which: 8,
-          bubbles: true, cancelable: true
-        }));
-        inputEl.dispatchEvent(new KeyboardEvent('keyup', {
-          key: 'Backspace', code: 'Backspace',
-          keyCode: 8, which: 8,
-          bubbles: true, cancelable: true
-        }));
-      }
+    const needsFullReplace = prefix.length > 0 && (isFuzzy || !word.startsWith(prefix));
 
-      // Wait for Monaco to process all the Backspace events, then paste
-      const deleteDelay = Math.max(60, prefix.length * 20);
+    if (needsFullReplace) {
+      for (let i = 0; i < prefix.length; i++) {
+        
+        const kd = new KeyboardEvent('keydown', { key: 'Backspace', code: 'Backspace', keyCode: 8, which: 8, bubbles: true, cancelable: true });
+        kd._codeRadar = true;
+        inputEl.dispatchEvent(kd);
+
+        inputEl.dispatchEvent(new InputEvent('beforeinput', { inputType: 'deleteContentBackward', bubbles: true, cancelable: true }));
+        inputEl.dispatchEvent(new InputEvent('input', { inputType: 'deleteContentBackward', bubbles: true }));
+        
+        const ku = new KeyboardEvent('keyup', { key: 'Backspace', code: 'Backspace', keyCode: 8, which: 8, bubbles: true, cancelable: true });
+        ku._codeRadar = true;
+        inputEl.dispatchEvent(ku);
+      }
+      const delay = Math.max(60, prefix.length * 18);
       setTimeout(() => {
         _doPaste(inputEl, word);
-        setTimeout(() => { isInserting = false; wordBuffer = ''; }, 120);
-      }, deleteDelay);
-
+        setTimeout(() => { isInserting = false; resetBuffer(); }, 120);
+      }, delay);
     } else {
-      // ── Exact prefix path: paste only the remaining suffix ─────────
       const suffix = word.slice(prefix.length);
-      if (!suffix) {
-        isInserting = false;
-        return;
-      }
+      if (!suffix) { isInserting = false; return; }
       _doPaste(inputEl, suffix);
-      setTimeout(() => { isInserting = false; wordBuffer = ''; }, 120);
+      setTimeout(() => { isInserting = false; resetBuffer(); }, 120);
     }
   }
 
-  // ── Autocomplete Logic ─────────────────────────────────────────────
+  function resetBuffer() {
+    wordBuffer  = '';
+    dotMode     = false;
+    dotContext  = '';
+  }
+
+  function filterMethods(methods, typed) {
+    if (!methods || methods.length === 0) return [];
+
+    const lower = (typed || '').toLowerCase();
+
+    if (!lower) {
+      
+      return methods.slice(0, 10).map(m => ({
+        word: m, frequency: 1, indices: [], isFuzzy: false, score: 0
+      }));
+    }
+
+    const exact   = [];
+    const fuzzy   = [];
+
+    for (const m of methods) {
+      const lm = m.toLowerCase();
+
+      if (lm.startsWith(lower)) {
+        exact.push({
+          word: m, frequency: 1, isFuzzy: false, score: 1000 - m.length,
+          indices: Array.from({ length: lower.length }, (_, i) => i)
+        });
+        continue;
+      }
+
+      const indices = [];
+      let pi = 0;
+      for (let i = 0; i < lm.length && pi < lower.length; i++) {
+        if (lm[i] === lower[pi]) { indices.push(i); pi++; }
+      }
+      if (pi === lower.length) {
+        fuzzy.push({ word: m, frequency: 1, isFuzzy: true, score: 500 - m.length, indices });
+      }
+    }
+
+    exact.sort((a, b) => b.score - a.score);
+    fuzzy.sort((a, b) => b.score - a.score);
+    return [...exact, ...fuzzy].slice(0, 8);
+  }
+
+  function triggerDotCompletion() {
+    const lang    = getLanguage();
+    const code    = getCodeFromDOM();
+    const type    = Tokenizer.inferType(dotContext, code, lang);
+    const methods = type
+      ? Tokenizer.getMethodsForType(type, lang)
+      : Tokenizer.getAllMethods(lang);
+
+    const suggestions = filterMethods(methods, wordBuffer);
+    if (suggestions.length === 0) { popup.hide(); return; }
+
+    const pos = getCursorScreenPosition();
+    if (!pos) { popup.hide(); return; }
+
+    popup.show(suggestions, pos, wordBuffer);
+  }
 
   function triggerAutocomplete() {
     if (isInserting) return;
 
-    const prefix = wordBuffer;
-
-    if (!prefix || prefix.length < 2) {
-      popup.hide();
+    if (dotMode) {
+      triggerDotCompletion();
       return;
     }
 
-    // Rebuild trie from current visible code
+    const prefix = wordBuffer;
+    if (!prefix || prefix.length < 2) { popup.hide(); return; }
+
     rebuildTrie();
 
-    // ── 1. Exact prefix matches (always highest priority) ──────────
     const exactResults = trie.search(prefix, 8);
-
-    // ── 2. Fuzzy matches (subsequence — fills gaps when prefix misses) ──
     const fuzzyResults = trie.fuzzySearch(prefix, 8);
 
-    // ── 3. Merge: exact first, then fuzzy-only (not already in exact) ──
-    const seen = new Set(exactResults.map(r => r.word));
+    const seen      = new Set(exactResults.map(r => r.word));
     const fuzzyOnly = fuzzyResults.filter(r => !seen.has(r.word));
+    let suggestions = [...exactResults, ...fuzzyOnly]
+      .slice(0, 8)
+      .filter(s => s.word !== prefix);
 
-    let suggestions = [...exactResults, ...fuzzyOnly].slice(0, 8);
+    if (suggestions.length === 0) { popup.hide(); return; }
 
-    // Filter out exact match (user already typed the full word)
-    suggestions = suggestions.filter(s => s.word !== prefix);
+    const pos = getCursorScreenPosition();
+    if (!pos) { popup.hide(); return; }
 
-    if (suggestions.length === 0) {
-      popup.hide();
-      return;
-    }
-
-    // Get cursor position for popup placement
-    const cursorPos = getCursorScreenPosition();
-    if (!cursorPos) {
-      popup.hide();
-      return;
-    }
-
-    popup.show(suggestions, cursorPos, prefix);
+    popup.show(suggestions, pos, prefix);
   }
 
-  function scheduleAutocomplete() {
+  function forceAutocomplete() {
+    if (isInserting) return;
+
+    if (dotMode) { triggerDotCompletion(); return; }
+
+    const prefix = wordBuffer;
+
+    if (!prefix || prefix.length < 1) { popup.hide(); return; }
+
+    rebuildTrie();
+
+    const exactResults = trie.search(prefix, 8);
+    const fuzzyResults = trie.fuzzySearch(prefix, 8);
+
+    const seen      = new Set(exactResults.map(r => r.word));
+    const fuzzyOnly = fuzzyResults.filter(r => !seen.has(r.word));
+    let suggestions = [...exactResults, ...fuzzyOnly]
+      .slice(0, 8)
+      .filter(s => s.word !== prefix);
+
+    if (suggestions.length === 0) { popup.hide(); return; }
+
+    const pos = getCursorScreenPosition();
+    if (!pos) { popup.hide(); return; }
+
+    popup.show(suggestions, pos, prefix);
+  }
+
+  function scheduleAutocomplete(delay = 80) {
     clearTimeout(debounceTimer);
-    debounceTimer = setTimeout(triggerAutocomplete, 80);
+    debounceTimer = setTimeout(triggerAutocomplete, delay);
   }
 
   function acceptSuggestion() {
@@ -283,24 +269,26 @@
     const selected = popup.getSelected();
     if (!selected) return false;
 
-    const prefix = wordBuffer;
+    const prefix = wordBuffer;  
     popup.hide();
-    // Pass isFuzzy so insertCompletion knows whether to erase prefix first
     insertCompletion(prefix, selected.word, selected.isFuzzy === true);
     return true;
   }
 
-  // ── Keystroke Tracking ─────────────────────────────────────────────
-
-  /**
-   * Single keydown handler on document (capture phase).
-   * Only fires once per keystroke. Checks if focus is in Monaco.
-   */
   function onKeyDown(e) {
+    
+    if (e._codeRadar) return;
     if (!isFocusInEditor()) return;
     if (isInserting) return;
 
-    // ── Popup navigation (intercept before Monaco) ───────────
+    if ((e.ctrlKey || e.metaKey) && e.code === 'Space') {
+      e.preventDefault();
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+      forceAutocomplete();
+      return;
+    }
+
     if (popup.visible) {
       switch (e.key) {
         case 'Tab':
@@ -328,14 +316,37 @@
 
         case 'Escape':
           popup.hide();
-          wordBuffer = '';
+          resetBuffer();
           e.preventDefault();
           e.stopPropagation();
           return;
       }
     }
 
-    // ── Word buffer tracking ─────────────────────────────────
+    if (e.key === '.' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      
+      if (wordBuffer.length >= 1) {
+        dotContext = wordBuffer;
+        dotMode    = true;
+        wordBuffer = '';
+        
+        scheduleAutocomplete(120);
+      } else {
+        
+        resetBuffer();
+        popup.hide();
+      }
+      return;  
+    }
+
+    if (dotMode && e.key.length === 1) {
+      if (/[\s,;(){}[\]<>=+\-*/&|^!%]/.test(e.key)) {
+        resetBuffer();
+        popup.hide();
+        return;
+      }
+    }
+
     if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
       if (/[a-zA-Z_]/.test(e.key)) {
         wordBuffer += e.key;
@@ -344,53 +355,54 @@
         wordBuffer += e.key;
         scheduleAutocomplete();
       } else {
-        wordBuffer = '';
+        
+        resetBuffer();
         popup.hide();
       }
-    } else if (e.key === 'Backspace') {
+      return;
+    }
+
+    if (e.key === 'Backspace') {
       if (wordBuffer.length > 0) {
         wordBuffer = wordBuffer.slice(0, -1);
-        if (wordBuffer.length >= 2) {
+        if (dotMode) {
+          
+          scheduleAutocomplete(40);
+        } else if (wordBuffer.length >= 2) {
           scheduleAutocomplete();
         } else {
           popup.hide();
         }
+      } else if (dotMode) {
+        
+        wordBuffer = dotContext;
+        dotMode = false;
+        dotContext = '';
+        popup.hide();
+        if (wordBuffer.length >= 2) scheduleAutocomplete();
       }
-    } else if (e.key === 'Delete') {
-      wordBuffer = '';
-      popup.hide();
-    } else if ([
-      'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown',
-      'Home', 'End', 'PageUp', 'PageDown'
-    ].includes(e.key)) {
-      wordBuffer = '';
+      return;
+    }
+
+    if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown',
+         'Home', 'End', 'PageUp', 'PageDown'].includes(e.key)) {
+      resetBuffer();
       popup.hide();
     }
-    // Modifier-only keys (Shift, Ctrl, etc.) are ignored automatically
   }
 
-  // ── Setup ──────────────────────────────────────────────────────────
-
   function waitForEditor() {
-    return new Promise((resolve) => {
+    return new Promise(resolve => {
       const check = () => {
-        const editorEl = document.querySelector('.monaco-editor');
-        if (editorEl) {
-          resolve(editorEl);
-          return true;
-        }
+        const el = document.querySelector('.monaco-editor');
+        if (el) { resolve(el); return true; }
         return false;
       };
-
       if (check()) return;
-
-      const observer = new MutationObserver(() => {
-        if (check()) observer.disconnect();
-      });
-      observer.observe(document.body, { childList: true, subtree: true });
-
+      const obs = new MutationObserver(() => { if (check()) obs.disconnect(); });
+      obs.observe(document.body, { childList: true, subtree: true });
       setTimeout(() => {
-        observer.disconnect();
+        obs.disconnect();
         const el = document.querySelector('.monaco-editor');
         if (el) resolve(el);
       }, 20000);
@@ -398,45 +410,50 @@
   }
 
   function cleanup() {
-    if (trieInterval) {
-      clearInterval(trieInterval);
-      trieInterval = null;
-    }
+    
+    if (_onKeyDown)   { document.removeEventListener('keydown',   _onKeyDown,   true); _onKeyDown   = null; }
+    if (_onMouseDown) { document.removeEventListener('mousedown', _onMouseDown, false); _onMouseDown = null; }
+
+    if (trieInterval) { clearInterval(trieInterval); trieInterval = null; }
     clearTimeout(debounceTimer);
-    wordBuffer = '';
+
+    resetBuffer();
     lastCodeHash = '';
+    cachedLang   = null;
     trie.clear();
     popup.hide();
     initialized = false;
   }
 
   function attachListeners(editorEl) {
-    // Single keydown handler on document, capture phase
-    document.addEventListener('keydown', onKeyDown, true);
+    
+    if (_onKeyDown)   document.removeEventListener('keydown',   _onKeyDown,   true);
+    if (_onMouseDown) document.removeEventListener('mousedown', _onMouseDown, false);
 
-    // Click resets word buffer (user repositioned cursor)
-    document.addEventListener('mousedown', (e) => {
+    _onKeyDown   = onKeyDown;
+    _onMouseDown = (e) => {
       if (popup.el && popup.el.contains(e.target)) return;
-      wordBuffer = '';
+      resetBuffer();
       popup.hide();
-    });
-
-    // Scroll hides popup
-    editorEl.addEventListener('scroll', () => popup.hide(), true);
-    const scrollable = editorEl.querySelector('.monaco-scrollable-element');
-    if (scrollable) {
-      scrollable.addEventListener('scroll', () => popup.hide(), true);
-    }
-
-    // Popup mouse-click acceptance
-    // onAccept receives the full suggestion item (not just the word)
-    // so we can forward isFuzzy to insertCompletion.
-    popup.onAccept = (item) => {
-      insertCompletion(wordBuffer, item.word, item.isFuzzy === true);
     };
-  }
 
-  // ── Init ───────────────────────────────────────────────────────────
+    document.addEventListener('keydown',   _onKeyDown,   true);
+    document.addEventListener('mousedown', _onMouseDown, false);
+
+    const hideOnScroll = () => popup.hide();
+    editorEl.addEventListener('scroll', hideOnScroll, true);
+    const scrollable = editorEl.querySelector('.monaco-scrollable-element');
+    if (scrollable) scrollable.addEventListener('scroll', hideOnScroll, true);
+
+    popup.onAccept = (item) => {
+      const prefix = wordBuffer;
+      insertCompletion(prefix, item.word, item.isFuzzy === true);
+    };
+
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden && initialized) rebuildTrie();
+    });
+  }
 
   async function init() {
     if (initialized) return;
@@ -444,26 +461,18 @@
     const editorEl = await waitForEditor();
     if (!editorEl) return;
 
-    // Let Monaco fully initialize its internal state
-    await new Promise(r => setTimeout(r, 1500));
+    await new Promise(r => setTimeout(r, 1200));
 
     initialized = true;
-
     attachListeners(editorEl);
-
-    // Initial trie build
     rebuildTrie();
-
-    // Periodic trie rebuild (picks up new identifiers as user edits/scrolls)
     trieInterval = setInterval(rebuildTrie, 3000);
 
-    console.log('[CodeRadar] ✨ Ready');
+    console.log('[CodeRadar] ✨ Ready — Ctrl+Space to force suggestions, type "." for method hints');
   }
 
-  // ── SPA Navigation ─────────────────────────────────────────────────
-
   let lastUrl = location.href;
-  const urlObserver = new MutationObserver(() => {
+  new MutationObserver(() => {
     if (location.href !== lastUrl) {
       lastUrl = location.href;
       if (location.href.includes('/problems/')) {
@@ -471,9 +480,7 @@
         setTimeout(init, 2000);
       }
     }
-  });
-  urlObserver.observe(document.body, { childList: true, subtree: true });
+  }).observe(document.body, { childList: true, subtree: true });
 
-  // Start
   init();
 })();
