@@ -1,111 +1,56 @@
-# ⚡ CodeRadar
+<div align="center">
+  <img src="icon.png" alt="CodeRadar Logo" width="120" />
+  <h1>CodeRadar</h1>
+  <p><strong>A blazing fast, VS Code-style IntelliSense engine for LeetCode</strong></p>
+</div>
 
-A Chrome extension that adds **smart autocomplete** to LeetCode's Monaco code editor — powered by a Trie data structure.
+---
 
-![CodeRadar](icons/icon128.png)
+**CodeRadar** is a Chrome Extension that injects a high-performance autocomplete engine directly into LeetCode's Monaco Editor. Built entirely from scratch without relying on heavy external dependencies, it tracks your keystrokes, infers variable types, and provides sub-millisecond fuzzy search suggestions to dramatically speed up your competitive programming workflow.
 
 ## ✨ Features
 
-- 🌳 **Trie-based autocomplete** — Extracts identifiers from your code via regex, stores them in a Trie, and provides instant prefix-based suggestions
-- 🌐 **Language-aware keywords** — Built-in dictionaries for **Python**, **JavaScript**, **Java**, and **C++** (including LeetCode types like `ListNode`, `TreeNode`)
-- 🎨 **VS Code-style popup** — Glassmorphic suggestion panel with icon categorization, frequency badges, and prefix highlighting
-- ⌨️ **Keyboard navigation** — `↑`/`↓` to navigate, `Tab`/`Enter` to accept, `Esc` to dismiss
-- 🔄 **Real-time updates** — Trie rebuilds as you type, picking up new variables and functions
-- 📱 **SPA-aware** — Handles LeetCode's single-page navigation between problems
-- 🔒 **Zero CSP issues** — 100% DOM-based, no page context injection needed
+- 🚀 **Lightning Fast Fuzzy Search:** Built on a custom Trie data structure and an `fzf`-inspired scoring algorithm, CodeRadar matches scattered subsequences instantly (e.g., typing `cnt` matches `count`).
+- 🧠 **Context-Aware Dot Completion:** Type `nums.` and CodeRadar immediately suggests `push_back`, `size`, or `sort`. The engine infers variable types using regex heuristics and real-time DOM parsing.
+- 🌍 **Multi-Language Support:** Seamlessly supports **C++, Python, Java, and JavaScript**. The extension dynamically detects your current language from the LeetCode UI and swaps keyword dictionaries on the fly.
+- ⚡ **VS Code Keybindings:** Fully supports standard IDE shortcuts (`Ctrl/Cmd + Space` to force trigger, `Tab/Enter` to accept, `Up/Down` arrows to navigate).
+- 🛡️ **Zero Page Injections:** Operates entirely within isolated browser extension environments, bypassing strict Content Security Policies (CSP) by utilizing synthetic `InputEvent` dispatching to interface with the hidden editor buffers.
 
-## 📁 Project Structure
+## 📦 Installation
 
-```
-coderadar/
-├── manifest.json          # Chrome Extension Manifest V3
-├── src/
-│   ├── trie.js            # Trie data structure with frequency tracking
-│   ├── tokenizer.js       # Regex tokenizer + language keyword dictionaries
-│   ├── popup.js           # Autocomplete popup UI component
-│   └── content.js         # Main orchestrator (DOM-based, no bridge)
-├── styles/
-│   └── popup.css          # Dark glassmorphic styling
-├── icons/
-│   ├── icon16.png
-│   ├── icon48.png
-│   └── icon128.png
-├── .gitignore
-└── README.md
-```
+Since this extension is in active development, it can be installed manually by loading it unpacked into Chrome:
 
-## 🚀 Installation
-
-1. **Clone** this repo:
+1. Download or clone this repository:
    ```bash
-   git clone https://github.com/YOUR_USERNAME/coderadar.git
+   git clone https://github.com/16215harsh/CodeRadar.git
    ```
+2. Open Google Chrome and navigate to `chrome://extensions/`.
+3. Enable **Developer mode** using the toggle switch in the top right corner.
+4. Click the **Load unpacked** button and select the `CodeRadar` directory you just cloned.
+5. Open [LeetCode](https://leetcode.com) and start typing!
 
-2. Open Chrome → navigate to `chrome://extensions/`
+## 🛠️ Under the Hood
 
-3. Enable **Developer mode** (toggle in top-right)
+Building an autocomplete engine for a complex, web-based IDE like Monaco comes with unique challenges. Here is how CodeRadar solves them:
 
-4. Click **Load unpacked** → select the cloned folder
+- **The Engine (`trie.js`):** Basic array filtering is too slow for real-time keystroke tracking. CodeRadar pre-computes keywords into a Trie and uses a custom greedy forward-scan algorithm to calculate match scores based on consecutive characters, camelCase boundaries, and word starts.
+- **State Management (`content.js`):** Tracks cursor movements, backspaces, and editor focus using a robust state machine (`wordBuffer`).
+- **Editor Interfacing:** Modern Monaco instances ignore untrusted keyboard events. To perform complex insertions (like deleting mismatched casing before pasting a full word), CodeRadar dispatches precise `InputEvent('beforeinput', { inputType: 'deleteContentBackward' })` events to reliably manipulate the hidden text area.
 
-5. Go to any [LeetCode problem](https://leetcode.com/problems/two-sum/) and start typing!
+## 💻 Tech Stack
 
-## 🎯 Usage
+- **Vanilla JavaScript:** Zero heavy frameworks for maximum performance.
+- **HTML/CSS:** Custom popup UI styled to match LeetCode's dark mode aesthetics.
+- **Chrome Extensions API:** Manifest V3 compliant.
 
-| Action | Shortcut |
-|--------|----------|
-| Trigger suggestions | Type 2+ characters |
-| Navigate up | `↑` |
-| Navigate down | `↓` |
-| Accept suggestion | `Tab` or `Enter` |
-| Dismiss | `Esc` or click outside |
+## 🤝 Contributing
 
-## 🏗️ Architecture
+Contributions, issues, and feature requests are welcome! 
+Upcoming features on the roadmap:
+- [ ] Code Snippets (e.g. typing `fori` generates a full loop).
+- [ ] Parameter/Signature hints (e.g. tooltip for `substr(pos, len)`).
+- [ ] Custom user settings page.
 
-Everything runs in Chrome's **isolated content script world** — no page context injection, zero CSP conflicts.
+## 📜 License
 
-```
-┌─────────────────────────────────────────────┐
-│           Content Script (Isolated World)    │
-│                                             │
-│  Keystroke → Word Buffer → Trie Search      │
-│                              ↓              │
-│  .view-line DOM → Tokenizer → Trie Build    │
-│                              ↓              │
-│  .cursor DOM Position → Popup Placement     │
-│                              ↓              │
-│  Tab/Enter → Synthetic Paste → Monaco       │
-└─────────────────────────────────────────────┘
-```
-
-| Concern | Method |
-|---------|--------|
-| Read code | Parse `.view-line` element text content |
-| Detect current word | Track keystrokes in a buffer |
-| Cursor position | `.cursor` element's `getBoundingClientRect()` |
-| Insert completion | Synthetic `ClipboardEvent('paste')` with `DataTransfer` |
-
-## 🛠️ Supported Languages
-
-| Language | Keywords | Identifiers |
-|----------|:--------:|:-----------:|
-| Python | 130+ | ✅ |
-| JavaScript / TypeScript | 80+ | ✅ |
-| Java | 100+ | ✅ |
-| C++ | 120+ | ✅ |
-
-## 🔧 Development
-
-After editing any file:
-1. Go to `chrome://extensions/`
-2. Click **↻** on the extension card
-3. Hard-refresh the LeetCode page (`Cmd + Shift + R` / `Ctrl + Shift + R`)
-
-## ⚠️ Notes
-
-- Only activates on `https://leetcode.com/problems/*`
-- Reads visible code lines only (Monaco virtualizes rendering) — sufficient for typical LeetCode solutions
-- Does **NOT** send any data externally — everything is local
-
-## 📝 License
-
-MIT
+Distributed under the MIT License.
