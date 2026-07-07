@@ -513,6 +513,78 @@ const Tokenizer = {
   },
 
   /**
+   * Markov Chain transitions (Probability Graph).
+   * Maps a preceding token to a list of highly probable next tokens.
+   */
+  MARKOV_TRANSITIONS: {
+    cpp: {
+      'vector': ['int', 'long', 'long long', 'string', 'bool', 'pair', 'vector'],
+      'queue': ['int', 'pair', 'TreeNode', 'ListNode', 'vector'],
+      'stack': ['int', 'pair', 'TreeNode', 'ListNode', 'char'],
+      'map': ['int', 'string', 'char', 'long', 'pair'],
+      'unordered_map': ['int', 'string', 'char', 'long'],
+      'set': ['int', 'string', 'long', 'pair'],
+      'unordered_set': ['int', 'string', 'long'],
+      'priority_queue': ['int', 'pair', 'vector', 'greater'],
+      'pair': ['int', 'long', 'string', 'double'],
+      'for': ['int', 'auto', 'long', 'size_t'],
+      'while': ['true', 'false', 'q', 'pq', 'st', 'left', 'right'],
+      'if': ['true', 'false', '!'],
+      'return': ['true', 'false', '0', '1', 'ans', 'res', 'result', 'head', 'root'],
+      'public': ['class', 'void', 'int', 'bool', 'string', 'vector', 'ListNode', 'TreeNode'],
+      'class': ['Solution'],
+      'new': ['ListNode', 'TreeNode', 'int'],
+      '#include': ['<iostream>', '<vector>', '<string>', '<algorithm>', '<map>', '<set>', '<queue>', '<cmath>', '<numeric>']
+    },
+    python: {
+      'def': ['__init__', 'solve', 'dfs', 'bfs'],
+      'for': ['i', 'j', 'idx', 'num', 'char', 'node', 'key', 'val', 'row', 'col'],
+      'in': ['range', 'nums', 'arr', 'word', 'keys', 'values', 'items', 'enumerate'],
+      'while': ['True', 'False', 'q', 'stack', 'left', 'right', 'i'],
+      'if': ['not', 'True', 'False', 'i', 'j'],
+      'return': ['True', 'False', 'None', 'res', 'ans', '0', '1'],
+      'import': ['sys', 'math', 'collections', 'heapq', 'bisect', 'itertools'],
+      'from': ['collections', 'heapq', 'typing', 'bisect', 'math']
+    },
+    java: {
+      'ArrayList': ['Integer', 'String', 'Long', 'Boolean', 'List'],
+      'HashMap': ['Integer', 'String', 'Long', 'Character', 'Boolean'],
+      'HashSet': ['Integer', 'String', 'Long', 'Character'],
+      'Queue': ['Integer', 'TreeNode', 'ListNode', 'int[]'],
+      'Stack': ['Integer', 'Character', 'TreeNode', 'ListNode'],
+      'PriorityQueue': ['Integer', 'int[]', 'Map.Entry'],
+      'Map': ['Integer', 'String'],
+      'List': ['Integer', 'String', 'List'],
+      'public': ['class', 'void', 'int', 'boolean', 'String', 'List', 'ListNode', 'TreeNode', 'static'],
+      'private': ['int', 'boolean', 'String', 'void'],
+      'return': ['true', 'false', '0', '1', 'ans', 'res', 'result', 'head', 'root', 'null'],
+      'for': ['int', 'long', 'String'],
+      'while': ['true', 'false', '!q', '!stack'],
+      'new': ['ArrayList<>', 'HashMap<>', 'HashSet<>', 'LinkedList<>', 'PriorityQueue<>', 'TreeNode', 'ListNode']
+    },
+    javascript: {
+      'const': ['res', 'ans', 'map', 'set', 'queue', 'stack', 'arr', 'nums'],
+      'let': ['i', 'j', 'res', 'ans', 'left', 'right', 'count', 'sum'],
+      'for': ['let', 'const'],
+      'of': ['nums', 'arr', 'str', 'map', 'set'],
+      'while': ['true', 'false', 'left', 'queue', 'i'],
+      'return': ['true', 'false', 'null', 'undefined', 'res', 'ans', '0', '1'],
+      'new': ['Map', 'Set', 'Array', 'Promise', 'Date']
+    }
+  },
+
+  /**
+   * Get Markov Chain score boosts for the next probable tokens.
+   * @param {string} language
+   * @param {string} lastWord
+   * @returns {string[]}
+   */
+  getMarkovBoosts(language, lastWord) {
+    if (!lastWord) return [];
+    return (this.MARKOV_TRANSITIONS[language] || {})[lastWord] || [];
+  },
+
+  /**
    * Infer the type of `varName` by:
    *  1. Scanning `code` for a declaration (most accurate)
    *  2. Falling back to name heuristics

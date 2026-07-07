@@ -19,6 +19,7 @@
   let trieInterval  = null;
   let initialized   = false;
   let cachedLang    = null;  
+  let lastWord      = '';
 
   let _onKeyDown   = null;
   let _onMouseDown = null;
@@ -137,7 +138,12 @@
     }
   }
 
-  function resetBuffer() {
+  function resetBuffer(explicitLastWord) {
+    if (typeof explicitLastWord === 'string') {
+      lastWord = explicitLastWord;
+    } else if (wordBuffer && /^[a-zA-Z_]\w*$/.test(wordBuffer)) {
+      lastWord = wordBuffer;
+    }
     wordBuffer  = '';
     dotMode     = false;
     dotContext  = '';
@@ -214,8 +220,18 @@
 
     rebuildTrie();
 
-    const exactResults = trie.search(prefix, 8);
-    const fuzzyResults = trie.fuzzySearch(prefix, 8);
+    let exactResults = trie.search(prefix, 8);
+    let fuzzyResults = trie.fuzzySearch(prefix, 8);
+
+    const lang = getLanguage();
+    const boosts = Tokenizer.getMarkovBoosts(lang, lastWord);
+    
+    if (boosts.length > 0) {
+      exactResults = exactResults.map(r => boosts.includes(r.word) ? { ...r, score: r.score + 500 } : r);
+      fuzzyResults = fuzzyResults.map(r => boosts.includes(r.word) ? { ...r, score: r.score + 500 } : r);
+      exactResults.sort((a, b) => b.score - a.score);
+      fuzzyResults.sort((a, b) => b.score - a.score);
+    }
 
     const seen      = new Set(exactResults.map(r => r.word));
     const fuzzyOnly = fuzzyResults.filter(r => !seen.has(r.word));
@@ -242,8 +258,18 @@
 
     rebuildTrie();
 
-    const exactResults = trie.search(prefix, 8);
-    const fuzzyResults = trie.fuzzySearch(prefix, 8);
+    let exactResults = trie.search(prefix, 8);
+    let fuzzyResults = trie.fuzzySearch(prefix, 8);
+
+    const lang = getLanguage();
+    const boosts = Tokenizer.getMarkovBoosts(lang, lastWord);
+    
+    if (boosts.length > 0) {
+      exactResults = exactResults.map(r => boosts.includes(r.word) ? { ...r, score: r.score + 500 } : r);
+      fuzzyResults = fuzzyResults.map(r => boosts.includes(r.word) ? { ...r, score: r.score + 500 } : r);
+      exactResults.sort((a, b) => b.score - a.score);
+      fuzzyResults.sort((a, b) => b.score - a.score);
+    }
 
     const seen      = new Set(exactResults.map(r => r.word));
     const fuzzyOnly = fuzzyResults.filter(r => !seen.has(r.word));
@@ -271,6 +297,12 @@
 
     const prefix = wordBuffer;  
     popup.hide();
+    
+    // Set lastWord to the accepted suggestion synchronously and clear wordBuffer 
+    // so delayed resetBuffer doesn't overwrite it.
+    lastWord = selected.word;
+    wordBuffer = '';
+    
     insertCompletion(prefix, selected.word, selected.isFuzzy === true);
     return true;
   }
