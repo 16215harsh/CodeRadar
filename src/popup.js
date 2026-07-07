@@ -89,7 +89,11 @@ class AutocompletePopup {
         ${item.frequency > 1 ? `<span class="lc-item-freq">${item.frequency}×</span>` : ''}
       `;
 
-      li.addEventListener('mouseenter', () => this._selectIndex(index));
+      li.addEventListener('mousemove', () => {
+        if (this.selectedIndex !== index) {
+          this._selectIndex(index);
+        }
+      });
       li.addEventListener('mousedown', (e) => {
         e.preventDefault();
         e.stopPropagation();
