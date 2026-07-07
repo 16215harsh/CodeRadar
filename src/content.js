@@ -76,17 +76,18 @@
     if (document.hidden) return;   
 
     const code = getCodeFromDOM();
-    if (!code) return;
 
-    const hash = code.length + ':' + code.slice(0, 150) + code.slice(-150);
-    if (hash === lastCodeHash) return;
+    const hash = (code ? code.length : 0) + ':' + (code ? code.slice(0, 150) + code.slice(-150) : '');
+    if (hash === lastCodeHash && code) return;
     lastCodeHash = hash;
 
     trie.clear();
     cachedLang = null;  
 
-    trie.bulkInsert(Tokenizer.extractIdentifiers(code));
     trie.bulkInsert(Tokenizer.getKeywords(getLanguage()));
+    if (code) {
+      trie.bulkInsert(Tokenizer.extractIdentifiers(code));
+    }
   }
 
   function _doPaste(inputEl, text) {
@@ -395,6 +396,12 @@
     }
 
     if (e.key === 'Backspace') {
+      if (e.altKey || e.ctrlKey || e.metaKey) {
+        resetBuffer();
+        popup.hide();
+        return;
+      }
+
       if (wordBuffer.length > 0) {
         wordBuffer = wordBuffer.slice(0, -1);
         if (dotMode) {
